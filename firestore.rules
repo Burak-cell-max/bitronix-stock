@@ -1,0 +1,134 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ──────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+
+    function isManager() {
+      return isAuthenticated() && getUserRole() in ['admin', 'manager'];
+    }
+
+    function isWarehouse() {
+      return isAuthenticated() && getUserRole() in ['admin', 'manager', 'warehouse'];
+    }
+
+    function isProduction() {
+      return isAuthenticated() && getUserRole() in ['admin', 'manager', 'production'];
+    }
+
+    function isAccounting() {
+      return isAuthenticated() && getUserRole() in ['admin', 'manager', 'accounting'];
+    }
+
+    function canRead() {
+      return isAuthenticated();
+    }
+
+    // ─── Users Collection ─────────────────────────────────────────────
+    match /users/{userId} {
+      // Herkes kendi profilini okuyabilir
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isManager());
+      // Sadece admin rol değiştirebilir; kullanıcı kendi profilini güncelleyebilir (rol hariç)
+      allow create: if isAdmin();
+      allow update: if isAdmin() ||
+        (request.auth.uid == userId && !('role' in request.resource.data.diff(resource.data).affectedKeys()));
+      allow delete: if isAdmin();
+    }
+
+    // ─── Products Collection ──────────────────────────────────────────
+    match /products/{productId} {
+      allow read: if canRead();
+      allow create: if isManager();
+      // Stok değişikliği warehouse yetkisi ile; diğer alanlar manager yetkisi ile
+      allow update: if isManager() ||
+        (isWarehouse() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock', 'updatedAt']));
+      // Soft delete: manager yapabilir
+      allow delete: if isAdmin();
+    }
+
+    // ─── Stock Movements (immutable audit log) ────────────────────────
+    match /stock_movements/{movementId} {
+      allow read: if canRead();
+      // Sadece yazma; güncelleme ve silme yasak (immutable)
+      allow create: if isWarehouse();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ─── Warehouses ───────────────────────────────────────────────────
+    match /warehouses/{warehouseId} {
+      allow read: if canRead();
+      allow create: if isManager();
+      allow update: if isManager();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Stock Counts ─────────────────────────────────────────────────
+    match /stock_counts/{countId} {
+      allow read: if canRead();
+      allow create: if isWarehouse();
+      allow update: if isWarehouse();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Suppliers ────────────────────────────────────────────────────
+    match /suppliers/{supplierId} {
+      allow read: if canRead();
+      allow write: if isManager();
+    }
+
+    // ─── Categories ───────────────────────────────────────────────────
+    match /categories/{categoryId} {
+      allow read: if canRead();
+      allow write: if isManager();
+    }
+
+    // ─── Purchase Orders ──────────────────────────────────────────────
+    match /purchase_orders/{orderId} {
+      allow read: if isManager() || isAccounting();
+      allow write: if isManager();
+    }
+
+    match /purchase_order_items/{itemId} {
+      allow read: if isManager() || isAccounting();
+      allow write: if isManager();
+    }
+
+    // ─── BOM & Production ─────────────────────────────────────────────
+    match /bom/{bomId} {
+      allow read: if canRead();
+      allow write: if isManager();
+    }
+
+    match /production_orders/{orderId} {
+      allow read: if isProduction();
+      allow write: if isProduction();
+    }
+
+    // ─── Notifications ────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow delete: if isAdmin();
+    }
+
+    // ─── Settings ─────────────────────────────────────────────────────
+    match /settings/{settingId} {
+      allow read: if canRead();
+      allow write: if isAdmin();
+    }
+  }
+}

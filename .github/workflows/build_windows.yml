@@ -1,0 +1,49 @@
+name: Build Bitronix Stock Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Enable Windows Desktop Support
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Compile Windows Installer (.exe)
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Upload Windows Portable Binary (.zip)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BitronixStock_Windows_Portable
+          path: build/windows/x64/runner/Release/
+
+      - name: Upload Windows Setup (.exe)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BitronixStockSetup_EXE
+          path: installer/BitronixStockSetup_v1.0.0.exe

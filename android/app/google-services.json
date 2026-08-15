@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "9473761437",
+    "project_id": "bitronix-stock",
+    "storage_bucket": "bitronix-stock.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:9473761437:android:04421f96179051e6333474",
+        "android_client_info": {
+          "package_name": "com.example.bitronix_stock"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQOFkPOSDnv7wW5-hBS4efljvjHa5dkBA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
