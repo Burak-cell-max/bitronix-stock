@@ -57,11 +57,20 @@ class _LoginScreenState extends State<LoginScreen> {
         } catch (createErr) {
           error = 'Giriş hatası: ${e.message}';
         }
+      } else if (e.code == 'configuration-not-found' ||
+          e.message?.contains('CONFIGURATION_NOT_FOUND') == true) {
+        error =
+            'Firebase Console\'da E-posta/Şifre girişi kapalı.\nLütfen Firebase Console -> Authentication -> Sign-in method sekmesinden E-posta/Şifre seçeneğini etkinleştirin.';
       } else {
         error = e.message ?? 'Giriş yapılamadı.';
       }
     } catch (e) {
-      error = 'Giriş hatası: $e';
+      if (e.toString().contains('CONFIGURATION_NOT_FOUND')) {
+        error =
+            'Firebase Console\'da E-posta/Şifre girişi kapalı.\nLütfen Firebase Console -> Authentication -> Sign-in method sekmesinden E-posta/Şifre seçeneğini etkinleştirin.';
+      } else {
+        error = 'Giriş hatası: $e';
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }

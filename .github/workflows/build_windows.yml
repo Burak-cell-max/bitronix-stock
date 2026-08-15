@@ -34,7 +34,7 @@ jobs:
 
       - name: Compile Windows Installer (.exe)
         run: |
-          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 
       - name: Upload Windows Portable Binary (.zip)
         uses: actions/upload-artifact@v4
