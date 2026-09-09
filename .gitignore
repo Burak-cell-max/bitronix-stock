@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Yapı çıktıları (CI/GitHub Release üretir — repoda tutulmaz)
+/installer/*.exe
+/installer/*.dmg
+/installer/*.AppImage
+/installer/*.tar.gz
+/installer/*.zip
+
+# Ayrı Electron denemesi — gömülü şifre içeriyor, temizlenmeden commit'lenmesin
+/desktop/

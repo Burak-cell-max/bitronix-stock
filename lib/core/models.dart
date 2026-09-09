@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
+/// Workspace (şirket) içi rol — V1'deki ekip yetki modeli, artık workspace'e scoped.
 enum UserRole { admin, manager, warehouse, production, accounting, viewer }
 
 extension UserRoleLabel on UserRole {
@@ -19,6 +20,26 @@ extension UserRoleLabel on UserRole {
   static UserRole fromString(String s) =>
       UserRole.values.firstWhere((e) => e.name == s.toLowerCase(),
           orElse: () => UserRole.viewer);
+}
+
+/// Platform (SaaS) düzeyi rol — admin panelini ve kiracılar arası erişimi belirler.
+/// Kayıt olan herkes [user]; yalnızca Bitronix personeli [admin]/[superAdmin].
+enum PlatformRole { superAdmin, admin, user }
+
+extension PlatformRoleX on PlatformRole {
+  String get label => switch (this) {
+    PlatformRole.superAdmin => 'Süper Admin',
+    PlatformRole.admin => 'Admin',
+    PlatformRole.user => 'Kullanıcı',
+  };
+
+  String get wire => name; // 'superAdmin' | 'admin' | 'user'
+
+  static PlatformRole fromString(String? s) => switch (s) {
+    'superAdmin' => PlatformRole.superAdmin,
+    'admin' => PlatformRole.admin,
+    _ => PlatformRole.user,
+  };
 }
 
 enum MovementType {
@@ -281,40 +302,56 @@ class UserProfile {
     this.displayName,
     this.photoUrl,
     this.isActive = true,
+    this.platformRole = PlatformRole.user,
+    this.status = 'active',
+    this.companyName,
+    this.defaultWorkspaceId,
+    this.lastLogin,
+    this.createdAt,
   });
 
   final String uid, email;
-  final String? displayName, photoUrl;
-  final UserRole role;
+  final String? displayName, photoUrl, companyName, defaultWorkspaceId;
+  final UserRole role; // legacy V1 alanı — workspace rolü artık üyelikten okunur
   final bool isActive;
+  final PlatformRole platformRole;
+  final String status; // 'active' | 'suspended' | 'deleted'
+  final DateTime? lastLogin, createdAt;
 
   String get name => displayName ?? email.split('@').first;
 
-  bool get isAdmin => role == UserRole.admin;
-  bool get canManageProducts =>
-      role == UserRole.admin || role == UserRole.manager;
-  bool get canAdjustStock =>
-      role == UserRole.admin ||
-      role == UserRole.manager ||
-      role == UserRole.warehouse;
-  bool get canTransfer =>
-      role == UserRole.admin ||
-      role == UserRole.manager ||
-      role == UserRole.warehouse;
-  bool get canViewFinancials =>
-      role == UserRole.admin ||
-      role == UserRole.manager ||
-      role == UserRole.accounting;
+  bool get isSuspended => status == 'suspended';
+  bool get isDeleted => status == 'deleted';
+  /// Uygulamaya girişi engellenmiş herhangi bir durum.
+  bool get isBlocked => status != 'active';
+  bool get isPlatformAdmin =>
+      platformRole == PlatformRole.superAdmin ||
+      platformRole == PlatformRole.admin;
+  bool get isSuperAdmin => platformRole == PlatformRole.superAdmin;
+  bool get hasWorkspace =>
+      defaultWorkspaceId != null && defaultWorkspaceId!.isNotEmpty;
+
+  /// Geriye dönük uyumluluk: V1 "Kullanıcılar" ekranı bu getter'ı kullanıyor.
+  /// V2'de "admin" = platform admin.
+  bool get isAdmin => isPlatformAdmin;
 
   factory UserProfile.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data()!;
+    final ll = d['lastLogin'];
+    final ca = d['createdAt'];
     return UserProfile(
       uid: doc.id,
       email: d['email'] ?? '',
-      displayName: d['displayName'],
+      displayName: d['displayName'] ?? d['name'],
       photoUrl: d['photoUrl'],
       role: UserRoleLabel.fromString(d['role'] ?? 'viewer'),
       isActive: d['isActive'] ?? true,
+      platformRole: PlatformRoleX.fromString(d['platformRole']),
+      status: d['status'] ?? 'active',
+      companyName: d['companyName'],
+      defaultWorkspaceId: d['defaultWorkspaceId'],
+      lastLogin: ll is Timestamp ? ll.toDate() : null,
+      createdAt: ca is Timestamp ? ca.toDate() : null,
     );
   }
 
@@ -324,8 +361,162 @@ class UserProfile {
     'photoUrl': photoUrl,
     'role': role.name,
     'isActive': isActive,
+    'platformRole': platformRole.wire,
+    'status': status,
+    if (companyName != null) 'companyName': companyName,
+    if (defaultWorkspaceId != null) 'defaultWorkspaceId': defaultWorkspaceId,
     'updatedAt': FieldValue.serverTimestamp(),
   };
+}
+
+// ─── Workspace (Şirket / Çalışma Alanı) ──────────────────────────────────────
+
+class Workspace {
+  const Workspace({
+    required this.id,
+    required this.name,
+    required this.ownerUid,
+    this.status = 'active',
+    this.createdAt,
+  });
+
+  final String id, name, ownerUid, status;
+  final DateTime? createdAt;
+
+  bool get isActive => status == 'active';
+
+  factory Workspace.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data() ?? {};
+    final c = d['createdAt'];
+    return Workspace(
+      id: doc.id,
+      name: d['name'] ?? '',
+      ownerUid: d['ownerUid'] ?? '',
+      status: d['status'] ?? 'active',
+      createdAt: c is Timestamp ? c.toDate() : null,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'ownerUid': ownerUid,
+    'status': status,
+    'createdAt': FieldValue.serverTimestamp(),
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
+}
+
+class WorkspaceMembership {
+  const WorkspaceMembership({
+    required this.uid,
+    required this.role,
+    this.email,
+    this.name,
+    this.addedAt,
+  });
+
+  final String uid;
+  final UserRole role;
+  final String? email, name;
+  final DateTime? addedAt;
+
+  String get label => name ?? email ?? uid;
+
+  bool get isAdmin => role == UserRole.admin;
+  bool get canManageProducts =>
+      role == UserRole.admin || role == UserRole.manager;
+  bool get canAdjustStock =>
+      role == UserRole.admin ||
+      role == UserRole.manager ||
+      role == UserRole.warehouse;
+  bool get canTransfer => canAdjustStock;
+  bool get canViewFinancials =>
+      role == UserRole.admin || role == UserRole.manager;
+
+  factory WorkspaceMembership.fromDoc(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final d = doc.data() ?? {};
+    final a = d['addedAt'];
+    return WorkspaceMembership(
+      uid: doc.id,
+      role: UserRoleLabel.fromString(d['role'] ?? 'viewer'),
+      email: d['email'],
+      name: d['name'],
+      addedAt: a is Timestamp ? a.toDate() : null,
+    );
+  }
+}
+
+// ─── Workspace daveti (e-posta ile ekip üyeliği) ────────────────────────────
+
+class WorkspaceInvite {
+  const WorkspaceInvite({
+    required this.id,
+    required this.workspaceId,
+    required this.workspaceName,
+    required this.email,
+    required this.role,
+    required this.invitedBy,
+    this.status = 'pending',
+    this.createdAt,
+  });
+
+  final String id, workspaceId, workspaceName, email, invitedBy, status;
+  final UserRole role;
+  final DateTime? createdAt;
+
+  bool get isPending => status == 'pending';
+
+  factory WorkspaceInvite.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data() ?? {};
+    final c = d['createdAt'];
+    return WorkspaceInvite(
+      id: doc.id,
+      workspaceId: d['workspaceId'] ?? '',
+      workspaceName: d['workspaceName'] ?? '',
+      email: d['email'] ?? '',
+      role: UserRoleLabel.fromString(d['role'] ?? 'viewer'),
+      invitedBy: d['invitedBy'] ?? '',
+      status: d['status'] ?? 'pending',
+      createdAt: c is Timestamp ? c.toDate() : null,
+    );
+  }
+}
+
+// ─── Audit Log (platform kritik işlem kaydı) ────────────────────────────────
+
+class AuditLog {
+  const AuditLog({
+    required this.id,
+    required this.action,
+    required this.actorUid,
+    this.actorEmail,
+    this.targetType,
+    this.targetId,
+    this.details = const {},
+    this.timestamp,
+  });
+
+  final String id, action, actorUid;
+  final String? actorEmail, targetType, targetId;
+  final Map<String, dynamic> details;
+  final DateTime? timestamp;
+
+  factory AuditLog.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data() ?? {};
+    final t = d['timestamp'];
+    return AuditLog(
+      id: doc.id,
+      action: d['action'] ?? '',
+      actorUid: d['actorUid'] ?? '',
+      actorEmail: d['actorEmail'],
+      targetType: d['targetType'],
+      targetId: d['targetId'],
+      details: (d['details'] as Map?)?.cast<String, dynamic>() ?? const {},
+      timestamp: t is Timestamp ? t.toDate() : null,
+    );
+  }
 }
 
 // ─── StockCount ───────────────────────────────────────────────────────────────

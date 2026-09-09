@@ -1,17 +1,17 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
-import '../../core/stock_repository.dart';
+import '../../core/providers.dart';
 
-class ScannerScreen extends StatefulWidget {
+class ScannerScreen extends ConsumerStatefulWidget {
   const ScannerScreen({super.key});
 
   @override
-  State<ScannerScreen> createState() => _ScannerScreenState();
+  ConsumerState<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen> {
+class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   final TextEditingController _codeController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -46,7 +46,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
     });
 
     try {
-      final p = await StockRepository(FirebaseFirestore.instance).findByCode(cleanCode);
+      final p =
+          await ref.read(stockRepositoryProvider)!.findByCode(cleanCode);
       if (!mounted) return;
 
       if (p == null) {
@@ -259,7 +260,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-class _ScannedProductCard extends StatefulWidget {
+class _ScannedProductCard extends ConsumerStatefulWidget {
   const _ScannedProductCard({
     required this.product,
     required this.onStockUpdated,
@@ -269,10 +270,11 @@ class _ScannedProductCard extends StatefulWidget {
   final VoidCallback onStockUpdated;
 
   @override
-  State<_ScannedProductCard> createState() => _ScannedProductCardState();
+  ConsumerState<_ScannedProductCard> createState() =>
+      _ScannedProductCardState();
 }
 
-class _ScannedProductCardState extends State<_ScannedProductCard> {
+class _ScannedProductCardState extends ConsumerState<_ScannedProductCard> {
   bool _isBusy = false;
 
   Future<void> _adjust(num delta) async {
@@ -281,7 +283,7 @@ class _ScannedProductCardState extends State<_ScannedProductCard> {
     final userId = user?.uid ?? 'desktop_user';
 
     try {
-      await StockRepository(FirebaseFirestore.instance).adjustStock(
+      await ref.read(stockRepositoryProvider)!.adjustStock(
         product: widget.product,
         quantity: delta,
         type: delta > 0 ? MovementType.stockIn : MovementType.stockOut,

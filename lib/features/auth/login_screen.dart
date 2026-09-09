@@ -1,8 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../../core/models.dart';
-import '../../core/user_repository.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,8 +9,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final email = TextEditingController(text: 'bitronix');
-  final password = TextEditingController(text: 'bitronix2026');
+  final email = TextEditingController();
+  final password = TextEditingController();
   bool busy = false;
   String? error;
 
@@ -23,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     var inputEmail = email.text.trim();
+    // Eski Bitronix dahili hesapları "kullanıcıadı" ile giriş yapıyordu.
     if (!inputEmail.contains('@')) {
       inputEmail = '$inputEmail@bitronix.com';
     }
@@ -30,33 +29,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final inputPassword = password.text;
 
     try {
-      // 1. Giriş yapmayı dene
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: inputEmail,
         password: inputPassword,
       );
+      // Profil / workspace kontrolü ve yönlendirme AuthGate tarafından yapılır.
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
-        // Kullanıcı yoksa otomatik hesabı ve Firestore profilini oluştur
-        try {
-          final cred = await FirebaseAuth.instance
-              .createUserWithEmailAndPassword(
-            email: inputEmail,
-            password: inputPassword,
-          );
-          if (cred.user != null) {
-            await UserRepository(FirebaseFirestore.instance).upsertProfile(
-              UserProfile(
-                uid: cred.user!.uid,
-                email: inputEmail,
-                displayName: 'Bitronix Yönetici',
-                role: UserRole.admin,
-              ),
-            );
-          }
-        } catch (createErr) {
-          error = 'Giriş hatası: ${e.message}';
-        }
+        error =
+            'Kullanıcı bulunamadı veya şifre hatalı.\nHesabınız yoksa "Kayıt Ol" ile oluşturabilirsiniz.';
       } else if (e.code == 'configuration-not-found' ||
           e.message?.contains('CONFIGURATION_NOT_FOUND') == true) {
         error =
@@ -232,6 +213,21 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: TextStyle(
                                   fontSize: 14, fontWeight: FontWeight.bold),
                             ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const RegisterScreen(),
+                                ),
+                              ),
+                      child: const Text(
+                        'Hesabın yok mu? Kayıt Ol',
+                        style:
+                            TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                      ),
                     ),
                   ],
                 ),

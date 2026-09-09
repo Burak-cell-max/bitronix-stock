@@ -3,132 +3,214 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─── Helper Functions ──────────────────────────────────────────────
+    // ─── Yardımcılar ─────────────────────────────────────────────────────
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    function myEmail() {
+      return request.auth != null && request.auth.token.email != null
+        ? request.auth.token.email.lower() : '';
     }
 
-    function isAdmin() {
-      return isAuthenticated() && getUserRole() == 'admin';
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isManager() {
-      return isAuthenticated() && getUserRole() in ['admin', 'manager'];
+    function platformRole() {
+      return userData().get('platformRole', 'user');
     }
 
-    function isWarehouse() {
-      return isAuthenticated() && getUserRole() in ['admin', 'manager', 'warehouse'];
+    function isPlatformAdmin() {
+      return isAuthenticated() && platformRole() in ['superAdmin', 'admin'];
     }
 
-    function isProduction() {
-      return isAuthenticated() && getUserRole() in ['admin', 'manager', 'production'];
+    function isSuperAdmin() {
+      return isAuthenticated() && platformRole() == 'superAdmin';
     }
 
-    function isAccounting() {
-      return isAuthenticated() && getUserRole() in ['admin', 'manager', 'accounting'];
+    function isWsMember(wid) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid));
     }
 
-    function canRead() {
-      return isAuthenticated();
+    function wsRole(wid) {
+      return get(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid)).data.role;
     }
 
-    // ─── Users Collection ─────────────────────────────────────────────
+    function wsHas(wid, roles) {
+      return isWsMember(wid) && wsRole(wid) in roles;
+    }
+
+    // Bir workspace daveti dokümanı (id = "{wid}_{email}").
+    function inviteId(wid) {
+      return wid + '_' + request.auth.token.email.lower();
+    }
+    function invitePath(wid) {
+      return /databases/$(database)/documents/workspace_invites/$(inviteId(wid));
+    }
+    function hasPendingInvite(wid, role) {
+      return request.auth.token.email != null
+        && exists(invitePath(wid))
+        && get(invitePath(wid)).data.status == 'pending'
+        && get(invitePath(wid)).data.role == role;
+    }
+
+    function changed(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
+    }
+
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ─── Users ──────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Herkes kendi profilini okuyabilir
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isManager());
-      // Sadece admin rol değiştirebilir; kullanıcı kendi profilini güncelleyebilir (rol hariç)
-      allow create: if isAdmin();
-      allow update: if isAdmin() ||
-        (request.auth.uid == userId && !('role' in request.resource.data.diff(resource.data).affectedKeys()));
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() &&
+        (request.auth.uid == userId || isPlatformAdmin());
+
+      // Kayıt: kullanıcı kendi profilini oluşturur, daima platformRole=user.
+      allow create: if request.auth.uid == userId
+        && request.resource.data.get('platformRole', 'user') == 'user'
+        && request.resource.data.get('status', 'active') == 'active';
+
+      // - superAdmin: her şey
+      // - kullanıcı kendisi: platformRole/status DEĞİŞMEDİĞİ sürece
+      // - platform admin: yalnızca `user` rolündeki hesapların DURUMUNU
+      //   (active/suspended/deleted) değiştirebilir; rol değiştiremez.
+      allow update: if isSuperAdmin()
+        || (request.auth.uid == userId && !changed(['platformRole', 'status']))
+        || (isPlatformAdmin()
+            && resource.data.get('platformRole', 'user') == 'user'
+            && !changed(['platformRole'])
+            && request.resource.data.status in ['active', 'suspended', 'deleted']);
+
+      allow delete: if isSuperAdmin();
     }
 
-    // ─── Products Collection ──────────────────────────────────────────
-    match /products/{productId} {
-      allow read: if canRead();
-      allow create: if isManager();
-      // Stok değişikliği warehouse yetkisi ile; diğer alanlar manager yetkisi ile
-      allow update: if isManager() ||
-        (isWarehouse() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentStock', 'updatedAt']));
-      // Soft delete: manager yapabilir
-      allow delete: if isAdmin();
+    // ─── Workspaces ─────────────────────────────────────────────────────
+    match /workspaces/{wid} {
+      allow read: if isWsMember(wid) || isPlatformAdmin();
+      allow create: if isAuthenticated()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if wsHas(wid, ['admin']) || isSuperAdmin();
+      allow delete: if isSuperAdmin();
+
+      // ── Üyeler ──
+      match /members/{memberId} {
+        // Son koşul: kullanıcının kendi üyelik dokümanı — collectionGroup
+        // "members where uid == myUid" sorgusunun kural tarafından
+        // kanıtlanabilir olması için.
+        allow read: if isWsMember(wid) || isPlatformAdmin()
+          || resource.data.get('uid', '') == request.auth.uid;
+
+        // - superAdmin / mevcut workspace admini
+        // - onboarding: workspace sahibi kendini admin olarak ekler
+        // - davet kabul: kendisine bekleyen bir davet olan kullanıcı, davetteki
+        //   rolle kendi üyelik dokümanını oluşturur
+        allow create: if isSuperAdmin()
+          || wsHas(wid, ['admin'])
+          || (request.auth.uid == memberId
+              && request.resource.data.role == 'admin'
+              && get(/databases/$(database)/documents/workspaces/$(wid)).data.ownerUid == request.auth.uid)
+          || (request.auth.uid == memberId
+              && hasPendingInvite(wid, request.resource.data.role));
+
+        // Üye kendi üyeliğinden ayrılabilir; admin herkesi yönetir.
+        allow update: if wsHas(wid, ['admin']) || isSuperAdmin();
+        allow delete: if wsHas(wid, ['admin']) || isSuperAdmin()
+          || request.auth.uid == memberId;
+      }
+
+      // ── Ürünler ──
+      match /products/{productId} {
+        allow read: if isWsMember(wid) || isPlatformAdmin();
+        allow create: if wsHas(wid, ['admin', 'manager']);
+        allow update: if wsHas(wid, ['admin', 'manager'])
+          || (wsHas(wid, ['warehouse'])
+              && onlyChanged(['currentStock', 'updatedAt', 'warehouseId']));
+        allow delete: if wsHas(wid, ['admin']);
+      }
+
+      // ── Stok hareketleri (değiştirilemez denetim kaydı) ──
+      match /stock_movements/{movementId} {
+        allow read: if isWsMember(wid) || isPlatformAdmin();
+        allow create: if wsHas(wid, ['admin', 'manager', 'warehouse', 'production']);
+        allow update, delete: if false;
+      }
+
+      // ── Depolar ──
+      match /warehouses/{warehouseId} {
+        allow read: if isWsMember(wid) || isPlatformAdmin();
+        allow create, update: if wsHas(wid, ['admin', 'manager']);
+        allow delete: if wsHas(wid, ['admin']);
+      }
+
+      // ── Sayımlar ──
+      match /stock_counts/{countId} {
+        allow read: if isWsMember(wid) || isPlatformAdmin();
+        allow create, update: if wsHas(wid, ['admin', 'manager', 'warehouse']);
+        allow delete: if wsHas(wid, ['admin']);
+      }
+
+      // ── Finans (yalnızca admin / manager / accounting) ──
+      match /finance_accounts/{accountId} {
+        allow read: if wsHas(wid, ['admin', 'manager', 'accounting']) || isPlatformAdmin();
+        allow create, update: if wsHas(wid, ['admin', 'manager', 'accounting']);
+        allow delete: if wsHas(wid, ['admin']);
+      }
+      match /finance_transactions/{transactionId} {
+        allow read: if wsHas(wid, ['admin', 'manager', 'accounting']) || isPlatformAdmin();
+        allow create: if wsHas(wid, ['admin', 'manager', 'accounting']);
+        // Güncelleme yalnızca durum (iptal) ve fatura eki alanları için.
+        allow update: if wsHas(wid, ['admin', 'manager', 'accounting'])
+          && onlyChanged(['status', 'invoiceUrl', 'invoiceName', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      // ── Diğer workspace alt koleksiyonları (suppliers, categories, …) ──
+      match /suppliers/{id}   { allow read: if isWsMember(wid); allow write: if wsHas(wid, ['admin', 'manager']); }
+      match /categories/{id}  { allow read: if isWsMember(wid); allow write: if wsHas(wid, ['admin', 'manager']); }
     }
 
-    // ─── Stock Movements (immutable audit log) ────────────────────────
-    match /stock_movements/{movementId} {
-      allow read: if canRead();
-      // Sadece yazma; güncelleme ve silme yasak (immutable)
-      allow create: if isWarehouse();
-      allow update: if false;
-      allow delete: if false;
+    // ─── Workspace davetleri (Faz 3) ───────────────────────────────────
+    // Doküman id'si "{workspaceId}_{email}" biçiminde.
+    match /workspace_invites/{inviteId} {
+      allow read: if isAuthenticated() && (
+        resource.data.email == myEmail()
+        || wsHas(resource.data.workspaceId, ['admin'])
+        || isPlatformAdmin()
+      );
+      allow create: if wsHas(request.resource.data.workspaceId, ['admin'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.email == request.resource.data.email.lower();
+      // Davet eden admin iptal/güncelleme yapabilir; davet edilen kişi yalnızca
+      // durum alanlarını değiştirebilir (kabul/ret).
+      allow update: if wsHas(resource.data.workspaceId, ['admin'])
+        || (resource.data.email == myEmail()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'acceptedBy', 'acceptedAt', 'updatedAt']));
+      allow delete: if wsHas(resource.data.workspaceId, ['admin'])
+        || isPlatformAdmin();
     }
 
-    // ─── Warehouses ───────────────────────────────────────────────────
-    match /warehouses/{warehouseId} {
-      allow read: if canRead();
-      allow create: if isManager();
-      allow update: if isManager();
-      allow delete: if isAdmin();
-    }
-
-    // ─── Stock Counts ─────────────────────────────────────────────────
-    match /stock_counts/{countId} {
-      allow read: if canRead();
-      allow create: if isWarehouse();
-      allow update: if isWarehouse();
-      allow delete: if isAdmin();
-    }
-
-    // ─── Suppliers ────────────────────────────────────────────────────
-    match /suppliers/{supplierId} {
-      allow read: if canRead();
-      allow write: if isManager();
-    }
-
-    // ─── Categories ───────────────────────────────────────────────────
-    match /categories/{categoryId} {
-      allow read: if canRead();
-      allow write: if isManager();
-    }
-
-    // ─── Purchase Orders ──────────────────────────────────────────────
-    match /purchase_orders/{orderId} {
-      allow read: if isManager() || isAccounting();
-      allow write: if isManager();
-    }
-
-    match /purchase_order_items/{itemId} {
-      allow read: if isManager() || isAccounting();
-      allow write: if isManager();
-    }
-
-    // ─── BOM & Production ─────────────────────────────────────────────
-    match /bom/{bomId} {
-      allow read: if canRead();
-      allow write: if isManager();
-    }
-
-    match /production_orders/{orderId} {
-      allow read: if isProduction();
-      allow write: if isProduction();
-    }
-
-    // ─── Notifications ────────────────────────────────────────────────
-    match /notifications/{notifId} {
-      allow read: if isAuthenticated();
+    // ─── Platform denetim kayıtları (Faz 2) ─────────────────────────────
+    match /audit_logs/{logId} {
+      allow read: if isPlatformAdmin();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId;
-      allow delete: if isAdmin();
+      allow update, delete: if false;
     }
 
-    // ─── Settings ─────────────────────────────────────────────────────
-    match /settings/{settingId} {
-      allow read: if canRead();
-      allow write: if isAdmin();
-    }
+    // ─── LEGACY V1 global koleksiyonları ────────────────────────────────
+    // Migrasyon superAdmin tarafından çalıştırılırken bu koleksiyonların
+    // OKUNABİLİR olması gerekir. Migrasyon doğrulandıktan sonra bu blok
+    // tamamen silinerek eski veriye erişim kapatılmalıdır.
+    match /products/{id}            { allow read: if isSuperAdmin(); allow write: if false; }
+    match /stock_movements/{id}     { allow read: if isSuperAdmin(); allow write: if false; }
+    match /warehouses/{id}          { allow read: if isSuperAdmin(); allow write: if false; }
+    match /stock_counts/{id}        { allow read: if isSuperAdmin(); allow write: if false; }
+    match /finance_accounts/{id}    { allow read: if isSuperAdmin(); allow write: if false; }
+    match /finance_transactions/{id}{ allow read: if isSuperAdmin(); allow write: if false; }
+    match /settings/{id}            { allow read: if isAuthenticated(); allow write: if isSuperAdmin(); }
   }
 }

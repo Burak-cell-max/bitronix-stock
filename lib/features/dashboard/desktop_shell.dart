@@ -2,10 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/models.dart';
 import '../../core/providers.dart';
+import '../../core/workspace_repository.dart' show WorkspaceRef;
 import '../barcodes/barcodes_screen.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../finance/finance_screen.dart';
 import '../movements/movements_screen.dart';
 import '../products/product_form_screen.dart';
 import '../products/products_screen.dart';
@@ -14,6 +15,7 @@ import '../stock_count/stock_count_screen.dart';
 import '../users/users_screen.dart';
 import '../warehouses/transfer_screen.dart';
 import '../warehouses/warehouses_screen.dart';
+import '../workspace/workspace_settings_screen.dart';
 
 class DesktopShell extends ConsumerStatefulWidget {
   const DesktopShell({super.key});
@@ -30,20 +32,84 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   final FocusNode _searchFocus = FocusNode();
 
   static const List<_NavItem> _navItems = [
-    _NavItem(icon: Icons.dashboard_outlined, label: 'Dashboard', activeIcon: Icons.dashboard_rounded),
-    _NavItem(icon: Icons.widgets_outlined, label: 'Ürünler', activeIcon: Icons.widgets_rounded),
-    _NavItem(icon: Icons.qr_code_2_outlined, label: 'Barkodlar', activeIcon: Icons.qr_code_2_rounded),
-    _NavItem(icon: Icons.warehouse_outlined, label: 'Depolar', activeIcon: Icons.warehouse_rounded),
-    _NavItem(icon: Icons.swap_horiz_outlined, label: 'Transfer', activeIcon: Icons.swap_horiz_rounded),
-    _NavItem(icon: Icons.history_outlined, label: 'Stok Hareketleri', activeIcon: Icons.history_rounded),
-    _NavItem(icon: Icons.fact_check_outlined, label: 'Sayım', activeIcon: Icons.fact_check_rounded),
-    _NavItem(icon: Icons.qr_code_scanner_outlined, label: 'Barkod Okuyucu', activeIcon: Icons.qr_code_scanner_rounded),
-    _NavItem(icon: Icons.local_shipping_outlined, label: 'Tedarikçiler', activeIcon: Icons.local_shipping_rounded, isComingSoon: true),
-    _NavItem(icon: Icons.shopping_cart_outlined, label: 'Satın Alma', activeIcon: Icons.shopping_cart_rounded, isComingSoon: true),
-    _NavItem(icon: Icons.precision_manufacturing_outlined, label: 'Üretim', activeIcon: Icons.precision_manufacturing_rounded, isComingSoon: true),
-    _NavItem(icon: Icons.bar_chart_outlined, label: 'Raporlar', activeIcon: Icons.bar_chart_rounded, isComingSoon: true),
-    _NavItem(icon: Icons.group_outlined, label: 'Kullanıcılar', activeIcon: Icons.group_rounded),
+    _NavItem(
+      icon: Icons.dashboard_outlined,
+      label: 'Dashboard',
+      activeIcon: Icons.dashboard_rounded,
+    ),
+    _NavItem(
+      icon: Icons.widgets_outlined,
+      label: 'Ürünler',
+      activeIcon: Icons.widgets_rounded,
+    ),
+    _NavItem(
+      icon: Icons.qr_code_2_outlined,
+      label: 'Barkodlar',
+      activeIcon: Icons.qr_code_2_rounded,
+    ),
+    _NavItem(
+      icon: Icons.warehouse_outlined,
+      label: 'Depolar',
+      activeIcon: Icons.warehouse_rounded,
+    ),
+    _NavItem(
+      icon: Icons.swap_horiz_outlined,
+      label: 'Transfer',
+      activeIcon: Icons.swap_horiz_rounded,
+    ),
+    _NavItem(
+      icon: Icons.history_outlined,
+      label: 'Stok Hareketleri',
+      activeIcon: Icons.history_rounded,
+    ),
+    _NavItem(
+      icon: Icons.fact_check_outlined,
+      label: 'Sayım',
+      activeIcon: Icons.fact_check_rounded,
+    ),
+    _NavItem(
+      icon: Icons.qr_code_scanner_outlined,
+      label: 'Barkod Okuyucu',
+      activeIcon: Icons.qr_code_scanner_rounded,
+    ),
+    _NavItem(
+      icon: Icons.local_shipping_outlined,
+      label: 'Tedarikçiler',
+      activeIcon: Icons.local_shipping_rounded,
+      isComingSoon: true,
+    ),
+    _NavItem(
+      icon: Icons.shopping_cart_outlined,
+      label: 'Satın Alma',
+      activeIcon: Icons.shopping_cart_rounded,
+      isComingSoon: true,
+    ),
+    _NavItem(
+      icon: Icons.precision_manufacturing_outlined,
+      label: 'Üretim',
+      activeIcon: Icons.precision_manufacturing_rounded,
+      isComingSoon: true,
+    ),
+    _NavItem(
+      icon: Icons.bar_chart_outlined,
+      label: 'Raporlar',
+      activeIcon: Icons.bar_chart_rounded,
+      isComingSoon: true,
+    ),
+    _NavItem(
+      icon: Icons.account_balance_wallet_outlined,
+      label: 'Finans',
+      activeIcon: Icons.account_balance_wallet_rounded,
+    ),
+    _NavItem(
+      icon: Icons.admin_panel_settings_outlined,
+      label: 'Yönetim',
+      activeIcon: Icons.admin_panel_settings_rounded,
+    ),
   ];
+
+  /// "Yönetim" sekmesinin indeksi — yalnızca platform yöneticilerine görünür.
+  static const _adminNavIndex = 13;
 
   @override
   void dispose() {
@@ -63,12 +129,20 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       6 => const StockCountScreen(),
       7 => const ScannerScreen(),
       8 || 9 || 10 || 11 => const _ComingSoonScreen(),
-      12 => const UsersScreen(),
+      12 => const FinanceScreen(),
+      13 => const UsersScreen(),
       _ => const DashboardScreen(),
     };
   }
 
   void _navigate(int idx) {
+    if (idx == _adminNavIndex) {
+      final isAdmin = ref
+              .read(currentUserProfileProvider)
+              .whenOrNull(data: (p) => p?.isPlatformAdmin) ??
+          false;
+      if (!isAdmin) return;
+    }
     if (_navItems[idx].isComingSoon) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -89,6 +163,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
   @override
   Widget build(BuildContext context) {
+    final isPlatformAdmin = ref
+            .watch(currentUserProfileProvider)
+            .whenOrNull(data: (p) => p?.isPlatformAdmin) ??
+        false;
     return Shortcuts(
       shortcuts: {
         LogicalKeySet(LogicalKeyboardKey.f2): const _NavIntent(7),
@@ -119,8 +197,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
             onInvoke: (_) {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                    builder: (_) => const ProductFormScreen()),
+                MaterialPageRoute(builder: (_) => const ProductFormScreen()),
               );
               return null;
             },
@@ -173,10 +250,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                               'assets/logo.png',
                               width: 32,
                               height: 32,
-                              errorBuilder: (context, error, stackTrace) => const Icon(
-                                  Icons.bolt_rounded,
-                                  color: Color(0xFFF58220),
-                                  size: 28),
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(
+                                    Icons.bolt_rounded,
+                                    color: Color(0xFFF58220),
+                                    size: 28,
+                                  ),
                             ),
                             if (!_sidebarCollapsed) ...[
                               const SizedBox(width: 10),
@@ -195,27 +274,34 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                           ],
                         ),
                       ),
-                      const Divider(
-                          height: 1, color: Color(0xFF1A1E2A)),
+                      const Divider(height: 1, color: Color(0xFF1A1E2A)),
                       const SizedBox(height: 8),
 
                       // Nav items
                       Expanded(
                         child: ListView.builder(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           itemCount: _navItems.length,
                           itemBuilder: (context, index) {
+                            // "Yönetim" yalnızca platform yöneticilerine.
+                            if (index == _adminNavIndex && !isPlatformAdmin) {
+                              return const SizedBox.shrink();
+                            }
                             // Section divider before Tedarikçiler
                             if (index == 8) {
                               return Column(
                                 children: [
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        vertical: 8),
+                                      vertical: 8,
+                                    ),
                                     child: Divider(
-                                        height: 1,
-                                        color: const Color(0xFF1A1E2A)),
+                                      height: 1,
+                                      color: const Color(0xFF1A1E2A),
+                                    ),
                                   ),
                                   _SidebarItem(
                                     item: _navItems[index],
@@ -248,7 +334,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                       // Collapse toggle
                       InkWell(
                         onTap: () => setState(
-                            () => _sidebarCollapsed = !_sidebarCollapsed),
+                          () => _sidebarCollapsed = !_sidebarCollapsed,
+                        ),
                         child: Container(
                           height: 44,
                           alignment: Alignment.center,
@@ -278,7 +365,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                           color: Color(0xFF0D1017),
                           border: Border(
                             bottom: BorderSide(
-                                color: Color(0xFF1A1E2A), width: 1),
+                              color: Color(0xFF1A1E2A),
+                              width: 1,
+                            ),
                           ),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -288,9 +377,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                             Text(
                               _navItems[_selectedIndex].label,
                               style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16),
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const Spacer(),
 
@@ -302,22 +392,30 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                                 controller: _searchCtrl,
                                 focusNode: _searchFocus,
                                 style: const TextStyle(
-                                    color: Colors.white, fontSize: 13),
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                ),
                                 onChanged: (v) =>
                                     setState(() => _searchQuery = v),
                                 onTap: _handleGlobalSearch,
                                 decoration: InputDecoration(
                                   hintText: 'Ara...  Ctrl+K',
                                   hintStyle: const TextStyle(
-                                      color: Color(0xFF475569),
-                                      fontSize: 12),
-                                  prefixIcon: const Icon(Icons.search_rounded,
-                                      color: Color(0xFF475569), size: 18),
+                                    color: Color(0xFF475569),
+                                    fontSize: 12,
+                                  ),
+                                  prefixIcon: const Icon(
+                                    Icons.search_rounded,
+                                    color: Color(0xFF475569),
+                                    size: 18,
+                                  ),
                                   suffixIcon: _searchQuery.isNotEmpty
                                       ? IconButton(
-                                          icon: const Icon(Icons.clear_rounded,
-                                              size: 16,
-                                              color: Color(0xFF64748B)),
+                                          icon: const Icon(
+                                            Icons.clear_rounded,
+                                            size: 16,
+                                            color: Color(0xFF64748B),
+                                          ),
                                           onPressed: () => setState(() {
                                             _searchCtrl.clear();
                                             _searchQuery = '';
@@ -326,22 +424,27 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                                       : null,
                                   filled: true,
                                   fillColor: const Color(0xFF12151E),
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(vertical: 0),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 0,
+                                  ),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
                                     borderSide: const BorderSide(
-                                        color: Color(0xFF1A1E2A)),
+                                      color: Color(0xFF1A1E2A),
+                                    ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
                                     borderSide: const BorderSide(
-                                        color: Color(0xFF1A1E2A)),
+                                      color: Color(0xFF1A1E2A),
+                                    ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
                                     borderSide: const BorderSide(
-                                        color: Color(0xFFF58220), width: 1.5),
+                                      color: Color(0xFFF58220),
+                                      width: 1.5,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -353,12 +456,15 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                               message:
                                   'F2: Barkod Okuyucu\nF3: Stok Giriş\nF4: Stok Çıkış\nF5: Transfer\nCtrl+K: Arama\nCtrl+N: Yeni Ürün\nEsc: Kapat',
                               textStyle: const TextStyle(
-                                  color: Colors.white, fontSize: 12),
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF12151E),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                    color: const Color(0xFF262C3D)),
+                                  color: const Color(0xFF262C3D),
+                                ),
                               ),
                               child: Container(
                                 padding: const EdgeInsets.all(8),
@@ -366,10 +472,14 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                                   color: const Color(0xFF12151E),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                      color: const Color(0xFF1A1E2A)),
+                                    color: const Color(0xFF1A1E2A),
+                                  ),
                                 ),
-                                child: const Icon(Icons.keyboard_rounded,
-                                    color: Color(0xFF64748B), size: 18),
+                                child: const Icon(
+                                  Icons.keyboard_rounded,
+                                  color: Color(0xFF64748B),
+                                  size: 18,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -377,8 +487,11 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                             // Logout button
                             IconButton(
                               tooltip: 'Çıkış Yap',
-                              icon: const Icon(Icons.logout_rounded,
-                                  color: Color(0xFF64748B), size: 20),
+                              icon: const Icon(
+                                Icons.logout_rounded,
+                                color: Color(0xFF64748B),
+                                size: 20,
+                              ),
                               onPressed: () async {
                                 await FirebaseAuth.instance.signOut();
                               },
@@ -391,8 +504,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                       Expanded(
                         child: IndexedStack(
                           index: _selectedIndex,
-                          children:
-                              List.generate(_navItems.length, _buildScreen),
+                          children: List.generate(
+                            _navItems.length,
+                            _buildScreen,
+                          ),
                         ),
                       ),
                     ],
@@ -433,7 +548,9 @@ class _SidebarItem extends StatelessWidget {
           duration: const Duration(milliseconds: 150),
           margin: const EdgeInsets.symmetric(vertical: 2),
           padding: EdgeInsets.symmetric(
-              horizontal: collapsed ? 0 : 12, vertical: 9),
+            horizontal: collapsed ? 0 : 12,
+            vertical: 9,
+          ),
           decoration: BoxDecoration(
             color: isSelected
                 ? const Color(0xFFF58220).withValues(alpha: 0.12)
@@ -456,8 +573,8 @@ class _SidebarItem extends StatelessWidget {
                 color: isSelected
                     ? const Color(0xFFF58220)
                     : item.isComingSoon
-                        ? const Color(0xFF374151)
-                        : const Color(0xFF94A3B8),
+                    ? const Color(0xFF374151)
+                    : const Color(0xFF94A3B8),
               ),
               if (!collapsed) ...[
                 const SizedBox(width: 10),
@@ -468,8 +585,8 @@ class _SidebarItem extends StatelessWidget {
                       color: isSelected
                           ? Colors.white
                           : item.isComingSoon
-                              ? const Color(0xFF374151)
-                              : const Color(0xFF94A3B8),
+                          ? const Color(0xFF374151)
+                          : const Color(0xFF94A3B8),
                       fontSize: 13,
                       fontWeight: isSelected
                           ? FontWeight.w600
@@ -480,16 +597,21 @@ class _SidebarItem extends StatelessWidget {
                 if (item.isComingSoon)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 5, vertical: 2),
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF1A1E2A),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: const Text('Yakında',
-                        style: TextStyle(
-                            color: Color(0xFF374151),
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'Yakında',
+                      style: TextStyle(
+                        color: Color(0xFF374151),
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
               ],
             ],
@@ -507,60 +629,148 @@ class _UserProfileTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(currentUserProfileProvider);
     final user = FirebaseAuth.instance.currentUser;
+    final wsName =
+        ref.watch(currentWorkspaceProvider).whenOrNull(data: (w) => w?.name);
+    final myWorkspaces =
+        ref.watch(myWorkspacesProvider).whenOrNull(data: (v) => v) ??
+            const <WorkspaceRef>[];
+    final currentWid = ref.watch(currentWorkspaceIdProvider);
+    final pendingInvites =
+        ref.watch(myInvitesProvider).whenOrNull(data: (v) => v)?.length ?? 0;
 
-    final name = profileAsync.whenOrNull(
-          data: (p) => p?.name,
-        ) ??
+    final name = profileAsync.whenOrNull(data: (p) => p?.name) ??
         user?.email?.split('@').first ??
         'Kullanıcı';
 
-    final role = profileAsync.whenOrNull(
-          data: (p) => p?.role.label,
-        ) ??
-        '';
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF12151E),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 14,
-              backgroundColor:
-                  const Color(0xFFF58220).withValues(alpha: 0.2),
-              child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: const TextStyle(
-                    color: Color(0xFFF58220),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12),
-              ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Çalışma alanı',
+        color: const Color(0xFF161922),
+        offset: const Offset(0, -8),
+        position: PopupMenuPosition.over,
+        onSelected: (v) {
+          if (v == 'settings') {
+            Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const WorkspaceSettingsScreen()));
+          } else if (v.startsWith('ws:')) {
+            final wid = v.substring(3);
+            if (wid != currentWid && user != null) {
+              ref
+                  .read(workspaceRepositoryProvider)
+                  .setDefaultWorkspace(user.uid, wid);
+            }
+          }
+        },
+        itemBuilder: (context) => [
+          if (myWorkspaces.length > 1) ...[
+            const PopupMenuItem<String>(
+              enabled: false,
+              height: 28,
+              child: Text('ÇALIŞMA ALANLARI',
+                  style: TextStyle(color: Color(0xFF64748B), fontSize: 10)),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name,
+            ...myWorkspaces.map((w) => PopupMenuItem<String>(
+                  value: 'ws:${w.workspace.id}',
+                  child: Row(children: [
+                    Icon(
+                      w.workspace.id == currentWid
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      size: 15,
+                      color: w.workspace.id == currentWid
+                          ? const Color(0xFFF58220)
+                          : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(w.workspace.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12)),
+                    ),
+                  ]),
+                )),
+            const PopupMenuDivider(),
+          ],
+          PopupMenuItem<String>(
+            value: 'settings',
+            child: Row(children: [
+              const Icon(Icons.settings_outlined,
+                  size: 15, color: Color(0xFF94A3B8)),
+              const SizedBox(width: 10),
+              const Text('Çalışma Alanı Ayarları',
+                  style: TextStyle(color: Colors.white, fontSize: 12)),
+              if (pendingInvites > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF58220),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('$pendingInvites',
                       style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis),
-                  if (role.isNotEmpty)
-                    Text(role,
-                        style: const TextStyle(
-                            color: Color(0xFF64748B), fontSize: 10),
-                        overflow: TextOverflow.ellipsis),
-                ],
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ]),
+          ),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF12151E),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor:
+                    const Color(0xFFF58220).withValues(alpha: 0.2),
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    color: Color(0xFFF58220),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (wsName != null)
+                      Text(
+                        wsName,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 10,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.unfold_more_rounded,
+                  size: 14, color: Color(0xFF475569)),
+            ],
+          ),
         ),
       ),
     );
@@ -574,25 +784,28 @@ class _ComingSoonScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.construction_rounded,
-                size: 64,
-                color: const Color(0xFF262C3D)),
-            const SizedBox(height: 16),
-            const Text('Bu modül yakında geliyor.',
-                style: TextStyle(
-                    color: Color(0xFF64748B), fontSize: 16)),
-            const SizedBox(height: 8),
-            const Text(
-              'BOM, Satın Alma, Tedarikçi ve Üretim modülleri\n bir sonraki geliştirme fazında eklenecek.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF374151), fontSize: 13),
-            ),
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.construction_rounded,
+          size: 64,
+          color: const Color(0xFF262C3D),
         ),
-      );
+        const SizedBox(height: 16),
+        const Text(
+          'Bu modül yakında geliyor.',
+          style: TextStyle(color: Color(0xFF64748B), fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'BOM, Satın Alma, Tedarikçi ve Üretim modülleri\n bir sonraki geliştirme fazında eklenecek.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Color(0xFF374151), fontSize: 13),
+        ),
+      ],
+    ),
+  );
 }
 
 // ─── Data ─────────────────────────────────────────────────────────────────────

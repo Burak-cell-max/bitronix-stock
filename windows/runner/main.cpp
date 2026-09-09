@@ -27,7 +27,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1440, 900);
-  if (!window.Create(L"Bitronix Stock - Masaüstü Yönetim Paneli", origin, size)) {
+  // ASCII-only \u kacislari: kaynak dosya kod sayfasindan bagimsiz olarak
+  // Turkce karakterlerin dogru derlenmesini garanti eder (aksi halde baslik
+  // "MasaA1/4stA1/4" gibi bozuk gorunur).
+  if (!window.Create(
+          L"Bitronix Stock - Masa\u00FCst\u00FC Y\u00F6netim Paneli",
+          origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

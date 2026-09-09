@@ -25,17 +25,11 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
         return windows;
       case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return linux;
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -79,4 +73,9 @@ class DefaultFirebaseOptions {
     storageBucket: 'bitronix-stock.firebasestorage.app',
     measurementId: 'G-FVTGQP6WSM',
   );
+
+  // Masaüstü platformlar (Linux/macOS) Windows ile aynı web-app kaydını kullanır;
+  // Auth/Firestore/Storage için apiKey + projectId + authDomain yeterlidir.
+  static const FirebaseOptions linux = windows;
+  static const FirebaseOptions macos = windows;
 }

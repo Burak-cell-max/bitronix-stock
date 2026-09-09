@@ -1,0 +1,162 @@
+name: Release (Windows · macOS · Linux)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Sürüm (ör. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+env:
+  FLUTTER_VERSION: '3.44.6'
+
+jobs:
+  # ─────────────────────────── Windows ───────────────────────────
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Sürüm
+        id: v
+        shell: bash
+        run: |
+          REF="${{ github.event.inputs.version || github.ref_name }}"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: Taşınabilir ZIP
+        shell: bash
+        run: |
+          cd build/windows/x64/runner/Release
+          7z a -tzip "../../../../../BitronixStock-${{ steps.v.outputs.version }}-windows-x64.zip" ./*
+
+      - name: Inno Setup kurulumu
+        run: choco install innosetup --no-progress -y
+
+      - name: Yükleyici (.exe)
+        run: >
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          /DMyAppVersion=${{ steps.v.outputs.version }}
+          /F"BitronixStockSetup_v${{ steps.v.outputs.version }}"
+          installer.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            BitronixStock-*-windows-x64.zip
+            installer/BitronixStockSetup_v*.exe
+          if-no-files-found: error
+
+  # ─────────────────────────── macOS ───────────────────────────
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Sürüm
+        id: v
+        run: |
+          REF="${{ github.event.inputs.version || github.ref_name }}"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - run: flutter pub get
+      - run: flutter config --enable-macos-desktop
+      - run: flutter build macos --release
+
+      - name: .app'i paketle (imzasız)
+        run: |
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
+          echo "Paketlenen: $APP"
+          # Gatekeeper karantina bayrağını at (yerel çalıştırma kolaylığı için)
+          xattr -cr "$APP" || true
+          ditto -c -k --keepParent "$APP" "BitronixStock-${{ steps.v.outputs.version }}-macos.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: BitronixStock-*-macos.zip
+          if-no-files-found: error
+
+  # ─────────────────────────── Linux ───────────────────────────
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Sistem bağımlılıkları
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev \
+            libstdc++-12-dev libsecret-1-dev libjsoncpp-dev libcups2-dev \
+            libayatana-appindicator3-dev
+
+      - name: Sürüm
+        id: v
+        run: |
+          REF="${{ github.event.inputs.version || github.ref_name }}"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - run: flutter pub get
+      - run: flutter config --enable-linux-desktop
+      - run: flutter build linux --release
+
+      - name: Taşınabilir tar.gz
+        run: |
+          cd build/linux/x64/release/bundle
+          tar czf "../../../../../BitronixStock-${{ steps.v.outputs.version }}-linux-x64.tar.gz" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: BitronixStock-*-linux-x64.tar.gz
+          if-no-files-found: error
+
+  # ─────────────────────────── GitHub Release ───────────────────────────
+  release:
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release oluştur
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          draft: true
+          generate_release_notes: true
+          body: |
+            ## Bitronix Stock ${{ github.ref_name }}
+
+            | Platform | Dosya |
+            |---|---|
+            | Windows | `BitronixStockSetup_*.exe` (kurulum) · `*-windows-x64.zip` (taşınabilir) |
+            | macOS | `*-macos.zip` — **imzasız**: ilk açılışta sağ tık → Aç, ya da `xattr -cr "Bitronix Stock.app"` |
+            | Linux | `*-linux-x64.tar.gz` — çıkar, `./bitronix_stock` çalıştır |

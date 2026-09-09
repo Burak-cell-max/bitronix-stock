@@ -20,106 +20,157 @@ class _MovementsScreenState extends ConsumerState<MovementsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Filters row
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _FilterChip(
-                    label: 'Tümü',
-                    isSelected: _typeFilter == null,
-                    onTap: () => setState(() => _typeFilter = null),
-                  ),
-                  const SizedBox(width: 8),
-                  ...MovementType.values.map((t) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _FilterChip(
-                          label: t.displayLabel,
-                          isSelected: _typeFilter == t,
-                          accentColor: _typeColor(t),
-                          onTap: () => setState(() => _typeFilter = t),
-                        ),
-                      )),
-                ],
-              ),
+      body: movementsAsync.when(
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: Color(0xFFF58220)),
+        ),
+        error: (e, _) => Center(
+          child: Text('Hata: $e',
+              style: const TextStyle(color: Colors.redAccent)),
+        ),
+        data: (movements) {
+          final filtered = _typeFilter == null
+              ? movements
+              : movements.where((m) => m.type == _typeFilter).toList();
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 700) {
+                return _buildMobile(context, filtered);
+              }
+              return _buildDesktop(context, filtered);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobile(BuildContext context, List<StockMovement> filtered) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FilterChip(
+                  label: 'Tümü',
+                  isSelected: _typeFilter == null,
+                  onTap: () => setState(() => _typeFilter = null),
+                ),
+                const SizedBox(width: 8),
+                ...MovementType.values.map((t) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _FilterChip(
+                        label: t.displayLabel,
+                        isSelected: _typeFilter == t,
+                        accentColor: _typeColor(t),
+                        onTap: () => setState(() => _typeFilter = t),
+                      ),
+                    )),
+              ],
             ),
-            const SizedBox(height: 16),
-            // Table header
-            Container(
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: filtered.isEmpty
+                ? const Center(
+                    child: Text('Hareket bulunamadı.',
+                        style: TextStyle(
+                            color: Color(0xFF64748B), fontSize: 14)),
+                  )
+                : ListView.separated(
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, index) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) =>
+                        _MovementCard(movement: filtered[i]),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktop(BuildContext context, List<StockMovement> filtered) {
+    return Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Filters row
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FilterChip(
+                  label: 'Tümü',
+                  isSelected: _typeFilter == null,
+                  onTap: () => setState(() => _typeFilter = null),
+                ),
+                const SizedBox(width: 8),
+                ...MovementType.values.map((t) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _FilterChip(
+                        label: t.displayLabel,
+                        isSelected: _typeFilter == t,
+                        accentColor: _typeColor(t),
+                        onTap: () => setState(() => _typeFilter = t),
+                      ),
+                    )),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Table header
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF12151E),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+              border: Border.all(color: const Color(0xFF1E2333)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: const Row(
+              children: [
+                SizedBox(width: 70, child: _TableHeader('Tarih')),
+                SizedBox(width: 16),
+                Expanded(flex: 2, child: _TableHeader('Ürün')),
+                SizedBox(width: 100, child: _TableHeader('İşlem Tipi')),
+                SizedBox(width: 90, child: _TableHeader('Miktar')),
+                Expanded(flex: 1, child: _TableHeader('Stok Değişimi')),
+                Expanded(flex: 1, child: _TableHeader('Kullanıcı')),
+                Expanded(flex: 1, child: _TableHeader('Sebep')),
+              ],
+            ),
+          ),
+          // Table body
+          Expanded(
+            child: Container(
               decoration: BoxDecoration(
                 color: const Color(0xFF12151E),
                 borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  topRight: Radius.circular(12),
+                  bottomLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
                 ),
-                border: Border.all(color: const Color(0xFF1E2333)),
-              ),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: const Row(
-                children: [
-                  SizedBox(width: 70, child: _TableHeader('Tarih')),
-                  SizedBox(width: 16),
-                  Expanded(flex: 2, child: _TableHeader('Ürün')),
-                  SizedBox(
-                      width: 100, child: _TableHeader('İşlem Tipi')),
-                  SizedBox(width: 90, child: _TableHeader('Miktar')),
-                  Expanded(
-                      flex: 1,
-                      child: _TableHeader('Stok Değişimi')),
-                  Expanded(flex: 1, child: _TableHeader('Kullanıcı')),
-                  Expanded(flex: 1, child: _TableHeader('Sebep')),
-                ],
-              ),
-            ),
-            // Table body
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF12151E),
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(12),
-                    bottomRight: Radius.circular(12),
-                  ),
-                  border: Border(
-                    left: const BorderSide(color: Color(0xFF1E2333)),
-                    right: const BorderSide(color: Color(0xFF1E2333)),
-                    bottom: const BorderSide(color: Color(0xFF1E2333)),
-                  ),
+                border: Border(
+                  left: const BorderSide(color: Color(0xFF1E2333)),
+                  right: const BorderSide(color: Color(0xFF1E2333)),
+                  bottom: const BorderSide(color: Color(0xFF1E2333)),
                 ),
-                child: movementsAsync.when(
-                  loading: () => const Center(
-                    child: CircularProgressIndicator(
-                        color: Color(0xFFF58220)),
-                  ),
-                  error: (e, _) => Center(
-                    child: Text('Hata: $e',
-                        style:
-                            const TextStyle(color: Colors.redAccent)),
-                  ),
-                  data: (movements) {
-                    final filtered = _typeFilter == null
-                        ? movements
-                        : movements
-                            .where((m) => m.type == _typeFilter)
-                            .toList();
-
-                    if (filtered.isEmpty) {
-                      return const Center(
-                        child: Text(
-                          'Hareket bulunamadı.',
-                          style: TextStyle(
-                              color: Color(0xFF64748B), fontSize: 14),
-                        ),
-                      );
-                    }
-
-                    return ListView.separated(
+              ),
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'Hareket bulunamadı.',
+                        style: TextStyle(
+                            color: Color(0xFF64748B), fontSize: 14),
+                      ),
+                    )
+                  : ListView.separated(
                       itemCount: filtered.length,
                       separatorBuilder: (_, index) => const Divider(
                         color: Color(0xFF1E2333),
@@ -128,13 +179,10 @@ class _MovementsScreenState extends ConsumerState<MovementsScreen> {
                       itemBuilder: (context, i) {
                         return _MovementRow(movement: filtered[i]);
                       },
-                    );
-                  },
-                ),
-              ),
+                    ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -331,6 +379,130 @@ class _FilterChip extends StatelessWidget {
             fontSize: 12,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Mobile Movement Card ─────────────────────────────────────────────────────
+
+class _MovementCard extends StatelessWidget {
+  const _MovementCard({required this.movement});
+  final StockMovement movement;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPositive = movement.quantity > 0;
+    final color = isPositive
+        ? const Color(0xFF10B981)
+        : const Color(0xFFEF4444);
+    final typeColor = _typeColor(movement.type);
+    final dateStr = DateFormat('dd.MM.yy HH:mm').format(movement.timestamp);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF12151E),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF1E2333)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: typeColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: typeColor.withValues(alpha: 0.35)),
+            ),
+            child: Icon(
+              isPositive
+                  ? Icons.arrow_upward_rounded
+                  : Icons.arrow_downward_rounded,
+              color: color,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  movement.productName.isNotEmpty
+                      ? movement.productName
+                      : movement.productId,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: typeColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        movement.type.displayLabel,
+                        style: TextStyle(
+                            color: typeColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '$dateStr • ${movement.userName ?? movement.userId}',
+                        style: const TextStyle(
+                            color: Color(0xFF64748B), fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                if (movement.reason.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    movement.reason,
+                    style: const TextStyle(
+                        color: Color(0xFF94A3B8), fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${isPositive ? '+' : ''}${movement.quantity}',
+                style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${movement.previousStock} → ${movement.newStock}',
+                style: const TextStyle(
+                    color: Color(0xFF94A3B8), fontSize: 11),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

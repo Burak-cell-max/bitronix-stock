@@ -1,15 +1,19 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/models.dart';
 import '../../core/providers.dart';
-import '../../core/stock_repository.dart';
-import '../scanner/scanner_screen.dart';
-import '../warehouses/transfer_screen.dart';
-import '../stock_count/stock_count_screen.dart';
+import '../movements/movements_screen.dart';
+import '../finance/finance_screen.dart';
 import '../products/product_detail_screen.dart';
+import '../products/product_form_screen.dart';
+import '../products/products_screen.dart';
+import '../scanner/scanner_screen.dart';
+import '../stock_count/stock_count_screen.dart';
+import '../warehouses/transfer_screen.dart';
+import '../warehouses/warehouses_screen.dart';
+import '../workspace/workspace_settings_screen.dart';
 
 class MobileShell extends ConsumerStatefulWidget {
   const MobileShell({super.key});
@@ -23,6 +27,10 @@ class _MobileShellState extends ConsumerState<MobileShell> {
 
   @override
   Widget build(BuildContext context) {
+    final canViewFinance = ref
+            .watch(currentMembershipProvider)
+            .whenOrNull(data: (m) => m?.canViewFinancials) ??
+        false;
     return Scaffold(
       backgroundColor: const Color(0xFF0B0D12),
       appBar: AppBar(
@@ -50,20 +58,56 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                 letterSpacing: 1.2,
               ),
             ),
-            const Text(
-              ' MOBILE',
-              style: TextStyle(
-                color: Color(0xFFF58220),
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
-            ),
           ],
         ),
         actions: [
+          if (canViewFinance)
+            IconButton(
+              tooltip: 'Finans',
+              icon: const Icon(
+                Icons.account_balance_wallet_outlined,
+                color: Color(0xFFF58220),
+                size: 20,
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FinanceScreen()),
+              ),
+            ),
+          IconButton(
+            tooltip: 'Barkod / QR Tara',
+            icon: const Icon(
+              Icons.qr_code_scanner_rounded,
+              color: Color(0xFFF58220),
+              size: 20,
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const _CameraScanModal()),
+              );
+            },
+          ),
+          IconButton(
+            tooltip: 'Çalışma Alanı',
+            icon: const Icon(
+              Icons.settings_outlined,
+              color: Color(0xFF64748B),
+              size: 20,
+            ),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const WorkspaceSettingsScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Çıkış Yap',
-            icon: const Icon(Icons.logout_rounded, color: Color(0xFF64748B), size: 20),
+            icon: const Icon(
+              Icons.logout_rounded,
+              color: Color(0xFF64748B),
+              size: 20,
+            ),
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
             },
@@ -74,7 +118,9 @@ class _MobileShellState extends ConsumerState<MobileShell> {
         index: _tabIndex,
         children: const [
           _MobileHomeScreen(),
-          ScannerScreen(),
+          ProductsScreen(),
+          MovementsScreen(),
+          WarehousesScreen(),
           StockCountScreen(),
         ],
       ),
@@ -90,7 +136,10 @@ class _MobileShellState extends ConsumerState<MobileShell> {
           elevation: 0,
           selectedItemColor: const Color(0xFFF58220),
           unselectedItemColor: const Color(0xFF64748B),
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+          selectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 11,
+          ),
           unselectedLabelStyle: const TextStyle(fontSize: 11),
           items: const [
             BottomNavigationBarItem(
@@ -99,9 +148,19 @@ class _MobileShellState extends ConsumerState<MobileShell> {
               label: 'Ana Ekran',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.qr_code_scanner_outlined),
-              activeIcon: Icon(Icons.qr_code_scanner_rounded),
-              label: 'Barkod Okut',
+              icon: Icon(Icons.widgets_outlined),
+              activeIcon: Icon(Icons.widgets_rounded),
+              label: 'Ürünler',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.history_outlined),
+              activeIcon: Icon(Icons.history_rounded),
+              label: 'Hareketler',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.warehouse_outlined),
+              activeIcon: Icon(Icons.warehouse_rounded),
+              label: 'Depolar',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.fact_check_outlined),
@@ -135,9 +194,7 @@ class _MobileHomeScreen extends ConsumerWidget {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const _CameraScanModal(),
-                ),
+                MaterialPageRoute(builder: (_) => const _CameraScanModal()),
               );
             },
           ),
@@ -160,7 +217,8 @@ class _MobileHomeScreen extends ConsumerWidget {
                   icon: Icons.add_circle_outline_rounded,
                   label: 'Stok Girişi',
                   color: const Color(0xFF10B981),
-                  onTap: () => _openQuickStockDialog(context, isStockIn: true),
+                  onTap: () =>
+                      _openQuickStockDialog(context, ref, isStockIn: true),
                 ),
               ),
               const SizedBox(width: 10),
@@ -169,7 +227,8 @@ class _MobileHomeScreen extends ConsumerWidget {
                   icon: Icons.remove_circle_outline_rounded,
                   label: 'Stok Çıkışı',
                   color: const Color(0xFFEF4444),
-                  onTap: () => _openQuickStockDialog(context, isStockIn: false),
+                  onTap: () =>
+                      _openQuickStockDialog(context, ref, isStockIn: false),
                 ),
               ),
             ],
@@ -191,12 +250,42 @@ class _MobileHomeScreen extends ConsumerWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: _QuickActionTile(
+                  icon: Icons.add_box_outlined,
+                  label: 'Ürün Ekle',
+                  color: const Color(0xFFF58220),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProductFormScreen(),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickActionTile(
                   icon: Icons.fact_check_outlined,
                   label: 'Depo Sayımı',
                   color: const Color(0xFF8B5CF6),
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const StockCountScreen()),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickActionTile(
+                  icon: Icons.qr_code_2_rounded,
+                  label: 'Barkod Okuyucu',
+                  color: const Color(0xFF06B6D4),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ScannerScreen()),
                   ),
                 ),
               ),
@@ -209,7 +298,9 @@ class _MobileHomeScreen extends ConsumerWidget {
             loading: () => const SizedBox.shrink(),
             error: (e, st) => const SizedBox.shrink(),
             data: (products) {
-              final criticals = products.where((p) => p.isCritical || p.isLow).toList();
+              final criticals = products
+                  .where((p) => p.isCritical || p.isLow)
+                  .toList();
               if (criticals.isEmpty) return const SizedBox.shrink();
 
               return Column(
@@ -217,8 +308,11 @@ class _MobileHomeScreen extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.warning_amber_rounded,
-                          color: Color(0xFFEF4444), size: 18),
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Color(0xFFEF4444),
+                        size: 18,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Kritik Stok Uyarısı (${criticals.length})',
@@ -236,15 +330,16 @@ class _MobileHomeScreen extends ConsumerWidget {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: criticals.length,
-                      separatorBuilder: (context, index) => const SizedBox(width: 10),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(width: 10),
                       itemBuilder: (ctx, i) {
                         final p = criticals[i];
                         final isOut = p.isOutOfStock;
                         final color = isOut
                             ? const Color(0xFF64748B)
                             : p.isCritical
-                                ? const Color(0xFFEF4444)
-                                : const Color(0xFFF59E0B);
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFFF59E0B);
                         return InkWell(
                           onTap: () => Navigator.push(
                             ctx,
@@ -258,7 +353,9 @@ class _MobileHomeScreen extends ConsumerWidget {
                             decoration: BoxDecoration(
                               color: color.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: color.withValues(alpha: 0.4)),
+                              border: Border.all(
+                                color: color.withValues(alpha: 0.4),
+                              ),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,7 +410,8 @@ class _MobileHomeScreen extends ConsumerWidget {
                 child: CircularProgressIndicator(color: Color(0xFFF58220)),
               ),
             ),
-            error: (e, _) => Text('$e', style: const TextStyle(color: Colors.redAccent)),
+            error: (e, _) =>
+                Text('$e', style: const TextStyle(color: Colors.redAccent)),
             data: (movements) {
               if (movements.isEmpty) {
                 return Container(
@@ -340,33 +438,49 @@ class _MobileHomeScreen extends ConsumerWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: movements.take(6).length,
-                  separatorBuilder: (context, index) => const Divider(color: Color(0xFF1E2333), height: 1),
+                  separatorBuilder: (context, index) =>
+                      const Divider(color: Color(0xFF1E2333), height: 1),
                   itemBuilder: (ctx, i) {
                     final m = movements[i];
                     final isPos = m.quantity > 0;
-                    final color = isPos ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+                    final color = isPos
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFFEF4444);
                     return ListTile(
                       dense: true,
                       leading: CircleAvatar(
                         radius: 14,
                         backgroundColor: color.withValues(alpha: 0.15),
                         child: Icon(
-                          isPos ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                          isPos
+                              ? Icons.arrow_upward_rounded
+                              : Icons.arrow_downward_rounded,
                           color: color,
                           size: 14,
                         ),
                       ),
                       title: Text(
                         m.productName.isNotEmpty ? m.productName : m.productId,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
                       ),
                       subtitle: Text(
                         m.type.displayLabel,
-                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                        ),
                       ),
                       trailing: Text(
                         '${isPos ? '+' : ''}${m.quantity}',
-                        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                     );
                   },
@@ -379,7 +493,11 @@ class _MobileHomeScreen extends ConsumerWidget {
     );
   }
 
-  void _openQuickStockDialog(BuildContext context, {required bool isStockIn}) {
+  void _openQuickStockDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool isStockIn,
+  }) {
     final codeCtrl = TextEditingController();
     final qtyCtrl = TextEditingController(text: '1');
 
@@ -394,8 +512,12 @@ class _MobileHomeScreen extends ConsumerWidget {
         title: Row(
           children: [
             Icon(
-              isStockIn ? Icons.add_circle_outline_rounded : Icons.remove_circle_outline_rounded,
-              color: isStockIn ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+              isStockIn
+                  ? Icons.add_circle_outline_rounded
+                  : Icons.remove_circle_outline_rounded,
+              color: isStockIn
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFFEF4444),
             ),
             const SizedBox(width: 8),
             Text(
@@ -434,11 +556,16 @@ class _MobileHomeScreen extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('İptal', style: TextStyle(color: Color(0xFF64748B))),
+            child: const Text(
+              'İptal',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: isStockIn ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+              backgroundColor: isStockIn
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFFEF4444),
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
@@ -448,7 +575,7 @@ class _MobileHomeScreen extends ConsumerWidget {
               final qty = num.tryParse(qtyCtrl.text) ?? 0;
               if (code.isEmpty || qty <= 0) return;
 
-              final repo = StockRepository(FirebaseFirestore.instance);
+              final repo = ref.read(stockRepositoryProvider)!;
               final product = await repo.findByCode(code);
               if (product == null) {
                 messenger.showSnackBar(
@@ -472,7 +599,9 @@ class _MobileHomeScreen extends ConsumerWidget {
               nav.pop();
               messenger.showSnackBar(
                 SnackBar(
-                  content: Text('${product.name}: ${isStockIn ? '+' : ''}$delta adet işlendi.'),
+                  content: Text(
+                    '${product.name}: ${isStockIn ? '+' : ''}$delta adet işlendi.',
+                  ),
                 ),
               );
             },
@@ -486,14 +615,14 @@ class _MobileHomeScreen extends ConsumerWidget {
 
 // ─── Camera Scan Modal ────────────────────────────────────────────────────────
 
-class _CameraScanModal extends StatefulWidget {
+class _CameraScanModal extends ConsumerStatefulWidget {
   const _CameraScanModal();
 
   @override
-  State<_CameraScanModal> createState() => _CameraScanModalState();
+  ConsumerState<_CameraScanModal> createState() => _CameraScanModalState();
 }
 
-class _CameraScanModalState extends State<_CameraScanModal> {
+class _CameraScanModalState extends ConsumerState<_CameraScanModal> {
   bool _handled = false;
 
   @override
@@ -517,7 +646,7 @@ class _CameraScanModalState extends State<_CameraScanModal> {
           final messenger = ScaffoldMessenger.of(context);
 
           setState(() => _handled = true);
-          final repo = StockRepository(FirebaseFirestore.instance);
+          final repo = ref.read(stockRepositoryProvider)!;
           final product = await repo.findByCode(code.trim());
 
           if (!mounted) return;
@@ -556,14 +685,20 @@ class _BigScanButton extends StatelessWidget {
         icon: const Icon(Icons.qr_code_scanner_rounded, size: 28),
         label: const Text(
           'BARKOD TARA',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+          ),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFF58220),
           foregroundColor: Colors.white,
           elevation: 6,
           shadowColor: const Color(0xFFF58220).withValues(alpha: 0.4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
       ),
     );

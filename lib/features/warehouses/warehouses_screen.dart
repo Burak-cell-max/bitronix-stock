@@ -1,9 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/providers.dart';
-import '../../core/warehouse_repository.dart';
 
 class WarehousesScreen extends ConsumerStatefulWidget {
   const WarehousesScreen({super.key});
@@ -16,11 +14,12 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
   @override
   Widget build(BuildContext context) {
     final warehousesAsync = ref.watch(warehousesProvider);
+    final isNarrow = MediaQuery.sizeOf(context).width < 700;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: EdgeInsets.all(isNarrow ? 16 : 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -35,9 +34,12 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
                     backgroundColor: const Color(0xFFF58220),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 18, vertical: 12),
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
               ],
@@ -49,8 +51,10 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
                   child: CircularProgressIndicator(color: Color(0xFFF58220)),
                 ),
                 error: (e, _) => Center(
-                  child: Text('Hata: $e',
-                      style: const TextStyle(color: Colors.redAccent)),
+                  child: Text(
+                    'Hata: $e',
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ),
                 data: (warehouses) {
                   if (warehouses.isEmpty) {
@@ -58,20 +62,26 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.warehouse_outlined,
-                              size: 64, color: Color(0xFF262C3D)),
+                          Icon(
+                            Icons.warehouse_outlined,
+                            size: 64,
+                            color: Color(0xFF262C3D),
+                          ),
                           SizedBox(height: 16),
-                          Text('Henüz depo eklenmedi.',
-                              style: TextStyle(
-                                  color: Color(0xFF64748B), fontSize: 14)),
+                          Text(
+                            'Henüz depo eklenmedi.',
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 14,
+                            ),
+                          ),
                         ],
                       ),
                     );
                   }
                   return ListView.separated(
                     itemCount: warehouses.length,
-                    separatorBuilder: (_, index) =>
-                        const SizedBox(height: 12),
+                    separatorBuilder: (_, index) => const SizedBox(height: 12),
                     itemBuilder: (context, i) =>
                         _WarehouseCard(warehouse: warehouses[i]),
                   );
@@ -85,10 +95,8 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
   }
 
   void _showWarehouseDialog(BuildContext context, {Warehouse? existing}) {
-    final nameCtrl =
-        TextEditingController(text: existing?.name ?? '');
-    final descCtrl =
-        TextEditingController(text: existing?.description ?? '');
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final descCtrl = TextEditingController(text: existing?.description ?? '');
 
     showDialog(
       context: context,
@@ -103,7 +111,7 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
           style: const TextStyle(color: Colors.white),
         ),
         content: SizedBox(
-          width: 400,
+          width: (MediaQuery.sizeOf(ctx).width * 0.9).clamp(0.0, 400.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -135,8 +143,10 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('İptal',
-                style: TextStyle(color: Color(0xFF64748B))),
+            child: const Text(
+              'İptal',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -145,16 +155,17 @@ class _WarehousesScreenState extends ConsumerState<WarehousesScreen> {
             ),
             onPressed: () async {
               if (nameCtrl.text.trim().isEmpty) return;
-              final repo =
-                  WarehouseRepository(FirebaseFirestore.instance);
+              final repo = ref.read(warehouseRepositoryProvider)!;
               if (existing == null) {
-                await repo.add(Warehouse(
-                  id: '',
-                  name: nameCtrl.text.trim(),
-                  description: descCtrl.text.trim().isEmpty
-                      ? null
-                      : descCtrl.text.trim(),
-                ));
+                await repo.add(
+                  Warehouse(
+                    id: '',
+                    name: nameCtrl.text.trim(),
+                    description: descCtrl.text.trim().isEmpty
+                        ? null
+                        : descCtrl.text.trim(),
+                  ),
+                );
               } else {
                 await repo.update(existing.id, {
                   'name': nameCtrl.text.trim(),
@@ -200,31 +211,42 @@ class _WarehouseCard extends ConsumerWidget {
               color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.warehouse_outlined,
-                color: Color(0xFF3B82F6), size: 24),
+            child: const Icon(
+              Icons.warehouse_outlined,
+              color: Color(0xFF3B82F6),
+              size: 24,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(warehouse.name,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15)),
+                Text(
+                  warehouse.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
                 if (warehouse.description != null) ...[
                   const SizedBox(height: 2),
-                  Text(warehouse.description!,
-                      style: const TextStyle(
-                          color: Color(0xFF94A3B8), fontSize: 13)),
+                  Text(
+                    warehouse.description!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ],
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: const Color(0xFF181C28),
               borderRadius: BorderRadius.circular(8),
@@ -233,9 +255,10 @@ class _WarehouseCard extends ConsumerWidget {
             child: Text(
               '${productCount ?? '...'} ürün',
               style: const TextStyle(
-                  color: Color(0xFFCBD5E1),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600),
+                color: Color(0xFFCBD5E1),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

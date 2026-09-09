@@ -2,13 +2,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'models.dart';
 
 class StockRepository {
-  StockRepository(this._db);
+  StockRepository(this._db, this.workspaceId);
   final FirebaseFirestore _db;
+  final String workspaceId;
+
+  DocumentReference<Map<String, dynamic>> get _ws =>
+      _db.collection('workspaces').doc(workspaceId);
+  CollectionReference<Map<String, dynamic>> get _products =>
+      _ws.collection('products');
+  CollectionReference<Map<String, dynamic>> get _movements =>
+      _ws.collection('stock_movements');
 
   // ─── Ürün Streams ──────────────────────────────────────────────────────────
 
-  Stream<List<Product>> products() => _db
-      .collection('products')
+  Stream<List<Product>> products() => _products
       .where('isDeleted', isEqualTo: false)
       .snapshots()
       .map((s) => s.docs.map(Product.fromDoc).toList());
@@ -16,8 +23,7 @@ class StockRepository {
   Stream<List<Product>> criticalProducts() =>
       products().map((p) => p.where((x) => x.isLow || x.isCritical).toList());
 
-  Stream<List<Product>> productsByWarehouse(String warehouseId) => _db
-      .collection('products')
+  Stream<List<Product>> productsByWarehouse(String warehouseId) => _products
       .where('isDeleted', isEqualTo: false)
       .where('warehouseId', isEqualTo: warehouseId)
       .snapshots()
@@ -26,14 +32,12 @@ class StockRepository {
   // ─── Ürün Arama ────────────────────────────────────────────────────────────
 
   Future<Product?> findByCode(String code) async {
-    final b = await _db
-        .collection('products')
+    final b = await _products
         .where('barcode', isEqualTo: code)
         .limit(1)
         .get();
     if (b.docs.isNotEmpty) return Product.fromDoc(b.docs.first);
-    final s = await _db
-        .collection('products')
+    final s = await _products
         .where('sku', isEqualTo: code)
         .limit(1)
         .get();
@@ -41,35 +45,58 @@ class StockRepository {
   }
 
   Future<Product?> getById(String id) async {
-    final doc = await _db.collection('products').doc(id).get();
+    final doc = await _products.doc(id).get();
     return doc.exists ? Product.fromDoc(doc) : null;
   }
 
   // ─── Ürün CRUD ─────────────────────────────────────────────────────────────
 
-  Future<String> addProduct(Map<String, dynamic> data) async {
-    final ref = await _db.collection('products').add({
+  Future<String> addProduct(
+    Map<String, dynamic> data, {
+    required String userId,
+    String? userName,
+  }) async {
+    final initialStock = (data.remove('initialStock') as num?) ?? 0;
+    if (initialStock < 0) throw ArgumentError('Başlangıç stoku negatif olamaz');
+    final ref = _products.doc();
+    final batch = _db.batch();
+    batch.set(ref, {
       ...data,
-      'currentStock': 0,
+      'currentStock': initialStock,
       'isDeleted': false,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    if (initialStock > 0) {
+      final movement = _movements.doc();
+      batch.set(movement, {
+        'movementId': movement.id,
+        'productId': ref.id,
+        'productName': data['name'],
+        'warehouseId': data['warehouseId'],
+        'userId': userId,
+        'userName': userName,
+        'type': MovementType.stockIn.value,
+        'quantity': initialStock,
+        'previousStock': 0,
+        'newStock': initialStock,
+        'reason': 'Yeni ürün başlangıç stoku',
+        'note': '',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
     return ref.id;
   }
 
-  Future<void> updateProduct(String id, Map<String, dynamic> data) =>
-      _db.collection('products').doc(id).update({
-        ...data,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+  Future<void> updateProduct(String id, Map<String, dynamic> data) => _products
+      .doc(id)
+      .update({...data, 'updatedAt': FieldValue.serverTimestamp()});
 
   /// Soft delete — veriyi silmez, isDeleted=true yapar
-  Future<void> deleteProduct(String id) =>
-      _db.collection('products').doc(id).update({
-        'isDeleted': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+  Future<void> deleteProduct(String id) => _products
+      .doc(id)
+      .update({'isDeleted': true, 'updatedAt': FieldValue.serverTimestamp()});
 
   // ─── Stok Ayarlama (Transaction) ──────────────────────────────────────────
 
@@ -82,13 +109,13 @@ class StockRepository {
     String reason = '',
     String note = '',
   }) => _db.runTransaction((tx) async {
-    final ref = _db.collection('products').doc(product.id);
+    final ref = _products.doc(product.id);
     final current = await tx.get(ref);
     if (!current.exists) throw StateError('Ürün bulunamadı');
     final before = (current.data()!['currentStock'] as num?) ?? 0;
     final after = before + quantity;
     if (after < 0) throw StateError('Yetersiz stok');
-    final m = _db.collection('stock_movements').doc();
+    final m = _movements.doc();
     tx.update(ref, {
       'currentStock': after,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -120,7 +147,7 @@ class StockRepository {
     String? userName,
     String note = '',
   }) => _db.runTransaction((tx) async {
-    final ref = _db.collection('products').doc(product.id);
+    final ref = _products.doc(product.id);
     final current = await tx.get(ref);
     if (!current.exists) throw StateError('Ürün bulunamadı');
     final before = (current.data()!['currentStock'] as num?) ?? 0;
@@ -132,7 +159,7 @@ class StockRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    final m = _db.collection('stock_movements').doc();
+    final m = _movements.doc();
     tx.set(m, {
       'movementId': m.id,
       'productId': product.id,
@@ -162,12 +189,12 @@ class StockRepository {
     final now = FieldValue.serverTimestamp();
     for (final item in items) {
       if (!item.hasDifference) continue;
-      final ref = _db.collection('products').doc(item.product.id);
+      final ref = _products.doc(item.product.id);
       batch.update(ref, {
         'currentStock': item.countedQuantity,
         'updatedAt': now,
       });
-      final m = _db.collection('stock_movements').doc();
+      final m = _movements.doc();
       batch.set(m, {
         'movementId': m.id,
         'productId': item.product.id,
