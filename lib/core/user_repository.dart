@@ -50,9 +50,13 @@ class UserRepository {
       .doc(profile.uid)
       .set(profile.toMap(), SetOptions(merge: true));
 
-  Future<void> touchLastLogin(String uid) => _users.doc(uid).set({
+  /// Sadece MEVCUT profili günceller. Doküman yoksa (kayıt anındaki yarış,
+  /// Console'dan eklenmiş hesap) sessizce başarısız olur — çağıran .catchError'lar.
+  /// set(merge) kullanmıyoruz: bare bir doküman oluşturursa createProfile'ın
+  /// platformRole/status eklemesi kural gereği reddedilir.
+  Future<void> touchLastLogin(String uid) => _users.doc(uid).update({
     'lastLogin': FieldValue.serverTimestamp(),
-  }, SetOptions(merge: true));
+  });
 
   // ─── Admin (Faz 2) ────────────────────────────────────────────────────────
 

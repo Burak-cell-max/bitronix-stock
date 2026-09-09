@@ -75,11 +75,17 @@ service cloud.firestore {
         && request.resource.data.get('status', 'active') == 'active';
 
       // - superAdmin: her şey
-      // - kullanıcı kendisi: platformRole/status DEĞİŞMEDİĞİ sürece
-      // - platform admin: yalnızca `user` rolündeki hesapların DURUMUNU
-      //   (active/suspended/deleted) değiştirebilir; rol değiştiremez.
+      // - kullanıcı kendisi: platformRole değişmiyor VEYA 'user'a set ediliyor;
+      //   status değişmiyor VEYA 'active'e set ediliyor. (Kayıt anındaki
+      //   touchLastLogin ↔ createProfile yarışında bare dokümanı tamamlar,
+      //   yetki yükseltmeye izin vermez.)
+      // - platform admin: yalnızca `user` rolündeki hesapların DURUMUNU değiştirebilir.
       allow update: if isSuperAdmin()
-        || (request.auth.uid == userId && !changed(['platformRole', 'status']))
+        || (request.auth.uid == userId
+            && (request.resource.data.get('platformRole', 'user') == resource.data.get('platformRole', 'user')
+                || request.resource.data.get('platformRole', 'user') == 'user')
+            && (request.resource.data.get('status', 'active') == resource.data.get('status', 'active')
+                || request.resource.data.get('status', 'active') == 'active'))
         || (isPlatformAdmin()
             && resource.data.get('platformRole', 'user') == 'user'
             && !changed(['platformRole'])
