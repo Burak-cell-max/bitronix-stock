@@ -49,7 +49,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAQOFkPOSDnv7wW5-hBS4efljvjHa5dkBA',
-    appId: '1:9473761437:android:04421f96179051e6333474',
+    appId: '1:9473761437:android:fdee87b7d48113c8333474',
     messagingSenderId: '9473761437',
     projectId: 'bitronix-stock',
     storageBucket: 'bitronix-stock.firebasestorage.app',

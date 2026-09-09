@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:9473761437:android:fdee87b7d48113c8333474",
+        "android_client_info": {
+          "package_name": "com.bitronixdev.stock"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQOFkPOSDnv7wW5-hBS4efljvjHa5dkBA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:9473761437:android:04421f96179051e6333474",
         "android_client_info": {
           "package_name": "com.example.bitronix_stock"

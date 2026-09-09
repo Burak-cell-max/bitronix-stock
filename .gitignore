@@ -53,3 +53,10 @@ app.*.map.json
 
 # Ayrı Electron denemesi — gömülü şifre içeriyor, temizlenmeden commit'lenmesin
 /desktop/
+
+# Android release imzalama — ASLA commit'lenmez
+/android/key.properties
+/android/upload-keystore.jks
+/android/app/upload-keystore.jks
+*.jks
+*.keystore

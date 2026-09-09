@@ -1,4 +1,4 @@
-package com.example.bitronix_stock
+package com.bitronixdev.stock
 
 import io.flutter.embedding.android.FlutterActivity
 
