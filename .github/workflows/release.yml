@@ -133,9 +133,48 @@ jobs:
           path: BitronixStock-*-linux-x64.tar.gz
           if-no-files-found: error
 
+  # ─────────────────────────── Android ───────────────────────────
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Sürüm
+        id: v
+        run: |
+          REF="${{ github.event.inputs.version || github.ref_name }}"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - run: flutter pub get
+      - run: flutter build apk --release --split-per-abi
+
+      - name: APK'ları yeniden adlandır
+        run: |
+          cd build/app/outputs/flutter-apk
+          for f in app-*-release.apk; do
+            abi=$(echo "$f" | sed -E 's/app-(.*)-release\.apk/\1/')
+            mv "$f" "BitronixStock-${{ steps.v.outputs.version }}-android-${abi}.apk"
+          done
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: build/app/outputs/flutter-apk/BitronixStock-*-android-*.apk
+          if-no-files-found: error
+
   # ─────────────────────────── GitHub Release ───────────────────────────
   release:
-    needs: [windows, macos, linux]
+    needs: [windows, macos, linux, android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -160,3 +199,4 @@ jobs:
             | Windows | `BitronixStockSetup_*.exe` (kurulum) · `*-windows-x64.zip` (taşınabilir) |
             | macOS | `*-macos.zip` — **imzasız**: ilk açılışta sağ tık → Aç, ya da `xattr -cr "Bitronix Stock.app"` |
             | Linux | `*-linux-x64.tar.gz` — çıkar, `./bitronix_stock` çalıştır |
+            | Android | `*-android-arm64-v8a.apk` (çoğu cihaz) — bilinmeyen kaynaklara izin ver. Debug-imzalı. |
